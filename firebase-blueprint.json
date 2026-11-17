@@ -1,0 +1,436 @@
+{
+  "entities": {
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Non-sensitive user profile and workspace state",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "firstName": { "type": "string", "maxLength": 80 },
+        "lastName": { "type": "string", "maxLength": 80 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "preferredLang": { "type": "string", "enum": ["fr", "en"] },
+        "coupleId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["user", "moderator", "content_manager", "admin", "super_admin"] },
+        "accountStatus": { "type": "string", "enum": ["active", "deactivated"] },
+        "ageConfirmed": { "type": "boolean" },
+        "onboardingCompleted": { "type": "boolean" },
+        "lastLoginAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "preferredLang", "role", "ageConfirmed", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII, consent records, personal boundaries and preferences",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "ageConfirmedAt": { "type": "string", "format": "date-time" },
+        "termsAcceptedAt": { "type": "string", "format": "date-time" },
+        "privacyAcceptedAt": { "type": "string", "format": "date-time" },
+        "boundaries": { "type": "array" },
+        "preferences": { "type": "array" },
+        "maxIntimacyLevel": { "type": "integer" },
+        "discreetMode": { "type": "boolean" },
+        "mfaReminderEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "maxIntimacyLevel", "discreetMode", "updatedAt"]
+    },
+    "AdminRoleRecord": {
+      "title": "AdminRoleRecord",
+      "description": "Trusted server-verified role assignment for administrative staff",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["super_admin", "admin", "content_manager", "moderator"] },
+        "grantedBy": { "type": "string", "maxLength": 128 },
+        "mfaVerified": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "grantedBy", "createdAt", "updatedAt"]
+    },
+    "Couple": {
+      "title": "Couple",
+      "description": "Shared private sanctuary for two consented adult partners",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "memberIds": { "type": "array" },
+        "partnerAId": { "type": "string", "maxLength": 128 },
+        "partnerBId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["pending", "active", "paused", "dissolved"] },
+        "activeMode": { "type": "string", "enum": ["couple", "remote_sync", "pass_device"] },
+        "leftByUid": { "type": "string", "maxLength": 128 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "memberIds", "partnerAId", "status", "activeMode", "createdBy", "createdAt", "updatedAt"]
+    },
+    "CoupleInvite": {
+      "title": "CoupleInvite",
+      "description": "Private invitation code linking two adult accounts",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 6, "maxLength": 32, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "coupleId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "inviterId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "inviterName": { "type": "string", "maxLength": 100 },
+        "inviteeEmail": { "type": "string", "maxLength": 254 },
+        "acceptedBy": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "revoked", "expired"] },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "coupleId", "inviterId", "inviterName", "status", "createdAt", "updatedAt"]
+    },
+    "CoupleHistoryItem": {
+      "title": "CoupleHistoryItem",
+      "description": "Anti-repetition immutable ledger entry for a couple",
+      "type": "object",
+      "properties": {
+        "activityId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "universeId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "formatId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "type": "string", "enum": ["presented", "completed", "skipped"] },
+        "mode": { "type": "string", "enum": ["couple", "remote_sync", "pass_device"] },
+        "presentedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["activityId", "universeId", "formatId", "status", "mode", "presentedBy", "createdAt", "updatedAt"]
+    },
+    "CoupleFavoriteItem": {
+      "title": "CoupleFavoriteItem",
+      "description": "Couple shared favorite activity kept separate from automatic draw pool",
+      "type": "object",
+      "properties": {
+        "activityId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "universeId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "formatId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "addedBy": { "type": "string", "maxLength": 128 },
+        "replayCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["activityId", "universeId", "formatId", "addedBy", "replayCount", "createdAt", "updatedAt"]
+    },
+    "CoupleSession": {
+      "title": "CoupleSession",
+      "description": "Synchronized remote or pass-and-play session state for two partners",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "mode": { "type": "string", "enum": ["couple", "remote_sync", "pass_device"] },
+        "universeId": { "type": "string", "maxLength": 128 },
+        "formatId": { "type": "string", "maxLength": 128 },
+        "activityId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["waiting", "active", "revealing", "completed", "aborted"] },
+        "currentTurnUid": { "type": "string", "maxLength": 128 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "mode", "universeId", "formatId", "activityId", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "IndividualLedgerItem": {
+      "title": "IndividualLedgerItem",
+      "description": "Individual mode activity history or favorite item",
+      "type": "object",
+      "properties": {
+        "activityId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "universeId": { "type": "string", "maxLength": 128 },
+        "formatId": { "type": "string", "maxLength": 128 },
+        "kind": { "type": "string", "enum": ["history", "favorite"] },
+        "status": { "type": "string", "enum": ["presented", "completed", "skipped", "saved"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["activityId", "universeId", "formatId", "kind", "status", "createdAt", "updatedAt"]
+    },
+    "Universe": {
+      "title": "Universe",
+      "description": "One of the 12 core NOCTA thematic universes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "slug": { "type": "string", "maxLength": 128 },
+        "order": { "type": "integer" },
+        "category": { "type": "string", "maxLength": 80 },
+        "titleFr": { "type": "string", "maxLength": 160 },
+        "titleEn": { "type": "string", "maxLength": 160 },
+        "descriptionFr": { "type": "string", "maxLength": 1000 },
+        "descriptionEn": { "type": "string", "maxLength": 1000 },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "slug", "order", "category", "titleFr", "titleEn", "descriptionFr", "descriptionEn", "isActive", "updatedAt"]
+    },
+    "ActivityFormat": {
+      "title": "ActivityFormat",
+      "description": "One of the 60 structured activity formats (5 per universe)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "universeId": { "type": "string", "maxLength": 128 },
+        "order": { "type": "integer" },
+        "slug": { "type": "string", "maxLength": 128 },
+        "titleFr": { "type": "string", "maxLength": 160 },
+        "titleEn": { "type": "string", "maxLength": 160 },
+        "descriptionFr": { "type": "string", "maxLength": 1000 },
+        "descriptionEn": { "type": "string", "maxLength": 1000 },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "universeId", "order", "slug", "titleFr", "titleEn", "descriptionFr", "descriptionEn", "isActive", "updatedAt"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "Catalog activity item with stable identity and bilingual fields",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "universeId": { "type": "string", "maxLength": 128 },
+        "formatId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["question", "challenge", "scenario", "educational", "instruction"] },
+        "titleFr": { "type": "string", "maxLength": 300 },
+        "titleEn": { "type": "string", "maxLength": 300 },
+        "bodyFr": { "type": "string", "maxLength": 5000 },
+        "bodyEn": { "type": "string", "maxLength": 5000 },
+        "intimacyLevel": { "type": "integer" },
+        "durationMinutes": { "type": "integer" },
+        "status": { "type": "string", "enum": ["draft", "scheduled", "published", "archived"] },
+        "adultClassification": { "type": "string", "enum": ["general", "romantic", "sensual", "erotic", "explicit", "educational"] },
+        "allowedSpaces": { "type": "array" },
+        "mediaId": { "type": "string", "maxLength": 128 },
+        "contentHash": { "type": "string", "maxLength": 128 },
+        "sourceImportId": { "type": "string", "maxLength": 128 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "universeId", "formatId", "type", "titleFr", "titleEn", "bodyFr", "bodyEn", "intimacyLevel", "durationMinutes", "status", "contentHash", "createdBy", "createdAt", "updatedAt"]
+    },
+    "DocumentImport": {
+      "title": "DocumentImport",
+      "description": "Deterministic PDF/DOCX document import job metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fileName": { "type": "string", "maxLength": 255 },
+        "mimeType": { "type": "string", "maxLength": 160 },
+        "fileSize": { "type": "integer" },
+        "serverFileId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["extracted", "in_review", "partially_published", "published", "cancelled"] },
+        "totalExtracted": { "type": "integer" },
+        "acceptedCount": { "type": "integer" },
+        "rejectedCount": { "type": "integer" },
+        "duplicateCount": { "type": "integer" },
+        "requiresOcr": { "type": "boolean" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fileName", "mimeType", "fileSize", "serverFileId", "status", "totalExtracted", "acceptedCount", "rejectedCount", "duplicateCount", "requiresOcr", "createdBy", "createdAt", "updatedAt"]
+    },
+    "ImportExtractedItem": {
+      "title": "ImportExtractedItem",
+      "description": "Extracted deterministic block from PDF/DOCX awaiting admin classification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "importId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "order": { "type": "integer" },
+        "detectedKind": { "type": "string", "enum": ["heading", "subheading", "paragraph", "question", "answer", "list_item", "numbered_item", "instruction", "description"] },
+        "assignedType": { "type": "string", "enum": ["question", "challenge", "scenario", "educational", "instruction", "ignore"] },
+        "universeId": { "type": "string", "maxLength": 128 },
+        "formatId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 300 },
+        "body": { "type": "string", "maxLength": 5000 },
+        "contentHash": { "type": "string", "maxLength": 128 },
+        "reviewState": { "type": "string", "enum": ["pending", "accepted", "rejected", "published"] },
+        "isDuplicate": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "importId", "order", "detectedKind", "assignedType", "title", "body", "contentHash", "reviewState", "isDuplicate", "updatedAt"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Immutable administrative operation log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorRole": { "type": "string", "maxLength": 40 },
+        "action": { "type": "string", "maxLength": 120 },
+        "targetCollection": { "type": "string", "maxLength": 80 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "summary": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorUid", "actorRole", "action", "targetCollection", "targetId", "summary", "createdAt"]
+    },
+    "SiteSetting": {
+      "title": "SiteSetting",
+      "description": "Centralized appearance, feature flags, and general platform settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "defaultLang": { "type": "string", "enum": ["fr", "en"] },
+        "monetizationEnabled": { "type": "boolean" },
+        "remoteSyncEnabled": { "type": "boolean" },
+        "maintenanceMode": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "defaultLang", "monetizationEnabled", "remoteSyncEnabled", "maintenanceMode", "updatedAt"]
+    },
+    "MediaCategory": {
+      "title": "MediaCategory",
+      "description": "Super-admin editable media categories",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "slug": { "type": "string", "maxLength": 80 },
+        "labelFr": { "type": "string", "maxLength": 120 },
+        "labelEn": { "type": "string", "maxLength": 120 },
+        "order": { "type": "integer" },
+        "isSystem": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "slug", "labelFr", "labelEn", "order", "isSystem", "updatedAt"]
+    },
+    "MediaAsset": {
+      "title": "MediaAsset",
+      "description": "Owner-managed adult/editorial photography metadata linked to private server file storage",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fileId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "titleFr": { "type": "string", "maxLength": 200 },
+        "titleEn": { "type": "string", "maxLength": 200 },
+        "descriptionFr": { "type": "string", "maxLength": 1000 },
+        "descriptionEn": { "type": "string", "maxLength": 1000 },
+        "keywords": { "type": "array" },
+        "categoryId": { "type": "string", "maxLength": 128 },
+        "collectionName": { "type": "string", "maxLength": 120 },
+        "universeId": { "type": "string", "maxLength": 128 },
+        "formatId": { "type": "string", "maxLength": 128 },
+        "activityId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["banner", "primary", "secondary", "gallery", "universe_cover", "activity"] },
+        "focalPoint": { "type": "string", "enum": ["center", "top", "bottom", "left", "right"] },
+        "displayOrder": { "type": "integer" },
+        "adultClassification": { "type": "string", "enum": ["general", "romantic", "sensual", "erotic", "explicit", "educational"] },
+        "allowedSpaces": { "type": "array" },
+        "publicLandingSafe": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["draft", "published", "unpublished"] },
+        "mimeType": { "type": "string", "maxLength": 120 },
+        "fileSize": { "type": "integer" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fileId", "titleFr", "titleEn", "categoryId", "role", "focalPoint", "displayOrder", "adultClassification", "allowedSpaces", "publicLandingSafe", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "EditorialConfig": {
+      "title": "EditorialConfig",
+      "description": "Homepage editorial composition, images, section ordering, and bilingual texts (draft or published)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "enum": ["homepage_draft", "homepage_published", "texts_draft", "texts_published"] },
+        "payloadJson": { "type": "string", "maxLength": 60000 },
+        "version": { "type": "integer" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "payloadJson", "version", "updatedBy", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublicProfile" },
+      "description": "Public/workspace user profiles without sensitive PII"
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Owner-only PII, consent ledger, boundaries, and privacy settings"
+    },
+    "/users/{userId}/ledger/{activityId}": {
+      "schema": { "$ref": "#/entities/IndividualLedgerItem" },
+      "description": "Owner-only individual activity history and favorites"
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRoleRecord" },
+      "description": "Server-verified administrative roles registry"
+    },
+    "/couples/{coupleId}": {
+      "schema": { "$ref": "#/entities/Couple" },
+      "description": "Private couple container for two verified partners"
+    },
+    "/couple_invites/{code}": {
+      "schema": { "$ref": "#/entities/CoupleInvite" },
+      "description": "Private couple invitation codes"
+    },
+    "/couples/{coupleId}/history/{activityId}": {
+      "schema": { "$ref": "#/entities/CoupleHistoryItem" },
+      "description": "Anti-repetition couple history ledger"
+    },
+    "/couples/{coupleId}/favorites/{activityId}": {
+      "schema": { "$ref": "#/entities/CoupleFavoriteItem" },
+      "description": "Couple shared favorite activities"
+    },
+    "/couples/{coupleId}/sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/CoupleSession" },
+      "description": "Couple synchronized or pass-device play sessions"
+    },
+    "/universes/{universeId}": {
+      "schema": { "$ref": "#/entities/Universe" },
+      "description": "The 12 core NOCTA universes"
+    },
+    "/formats/{formatId}": {
+      "schema": { "$ref": "#/entities/ActivityFormat" },
+      "description": "The 60 activity formats across the 12 universes"
+    },
+    "/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/Activity" },
+      "description": "Catalog activities with stable IDs and publication statuses"
+    },
+    "/imports/{importId}": {
+      "schema": { "$ref": "#/entities/DocumentImport" },
+      "description": "Deterministic PDF/DOCX import job records"
+    },
+    "/imports/{importId}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/ImportExtractedItem" },
+      "description": "Extracted items awaiting admin classification and duplicate verification"
+    },
+    "/admin_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AdminAuditLog" },
+      "description": "Immutable administrative audit logs"
+    },
+    "/site_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSetting" },
+      "description": "Platform configuration and feature activation toggles"
+    },
+    "/media_categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/MediaCategory" },
+      "description": "Super-admin managed categories for NOCTA photography"
+    },
+    "/media_assets/{mediaId}": {
+      "schema": { "$ref": "#/entities/MediaAsset" },
+      "description": "Metadata and adult-classification rules for private server-stored media"
+    },
+    "/editorial_config/{docId}": {
+      "schema": { "$ref": "#/entities/EditorialConfig" },
+      "description": "Homepage visual customizer & bilingual editorial copy (draft and published)"
+    }
+  }
+}

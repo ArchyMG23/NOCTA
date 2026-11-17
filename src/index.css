@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --nocta-bg: #100D10;
+    --nocta-surface: #191217;
+    --nocta-burgundy: #4B1028;
+    --nocta-crimson: #781D35;
+    --nocta-wine: #32101D;
+    --nocta-text: #F4EEF0;
+    --nocta-muted: #B8AAB0;
+    --nocta-champagne: #C5A276;
+  }
+
+  html {
+    background-color: #100D10;
+    color: #F4EEF0;
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  }
+
+  .font-mono-tabular {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  *:focus-visible {
+    outline: 2px solid #C5A276;
+    outline-offset: 2px;
+  }
+}
+
+/* Custom subtle nocturnal scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #100D10;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #32101D;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4B1028;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

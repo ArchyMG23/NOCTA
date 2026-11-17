@@ -1,0 +1,8 @@
+{
+  "name": "NOCTA",
+  "description": "NOCTA — Découvrez-vous autrement. A private world for two. Plateforme privée bilingue pour couples adultes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

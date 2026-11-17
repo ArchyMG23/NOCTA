@@ -1,0 +1,668 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Core Security Primitives
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isBootstrapOwner() {
+      return isVerifiedUser() && request.auth.token.email == 'yombivictor@gmail.com';
+    }
+
+    function hasAdminDoc() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function adminRole() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role;
+    }
+
+    function isSuperAdmin() {
+      return isBootstrapOwner() || (hasAdminDoc() && adminRole() == 'super_admin');
+    }
+
+    function isAdmin() {
+      return isBootstrapOwner() || (hasAdminDoc() && adminRole() in ['super_admin', 'admin']);
+    }
+
+    function isContentStaff() {
+      return isBootstrapOwner() || (hasAdminDoc() && adminRole() in ['super_admin', 'admin', 'content_manager']);
+    }
+
+    function isAdminStaff() {
+      return isBootstrapOwner() || (hasAdminDoc() && adminRole() in ['super_admin', 'admin', 'content_manager', 'moderator']);
+    }
+
+    function isCoupleMember(coupleId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/couples/$(coupleId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/couples/$(coupleId)).data.memberIds;
+    }
+
+    // -------------------------------------------------------------------------
+    // Validation Blueprints (Anti-Update-Gap)
+    // -------------------------------------------------------------------------
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'preferredLang', 'role', 'ageConfirmed', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'preferredLang', 'coupleId', 'role', 'ageConfirmed', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && data.preferredLang in ['fr', 'en']
+        && (!('coupleId' in data) || data.coupleId == null || isValidId(data.coupleId))
+        && data.role in ['user', 'moderator', 'content_manager', 'admin', 'super_admin']
+        && data.ageConfirmed is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['uid', 'maxIntimacyLevel', 'discreetMode', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'ageConfirmedAt', 'termsAcceptedAt', 'privacyAcceptedAt', 'boundaries', 'preferences', 'maxIntimacyLevel', 'discreetMode', 'mfaReminderEnabled', 'updatedAt'])
+        && isValidId(data.uid)
+        && (!('email' in data) || (data.email is string && data.email.size() <= 254))
+        && (!('ageConfirmedAt' in data) || data.ageConfirmedAt is timestamp)
+        && (!('termsAcceptedAt' in data) || data.termsAcceptedAt is timestamp)
+        && (!('privacyAcceptedAt' in data) || data.privacyAcceptedAt is timestamp)
+        && (!('boundaries' in data) || (data.boundaries is list && data.boundaries.size() <= 30 && (data.boundaries.size() == 0 || data.boundaries[0] is string)))
+        && (!('preferences' in data) || (data.preferences is list && data.preferences.size() <= 30 && (data.preferences.size() == 0 || data.preferences[0] is string)))
+        && data.maxIntimacyLevel is int && data.maxIntimacyLevel >= 1 && data.maxIntimacyLevel <= 5
+        && data.discreetMode is bool
+        && (!('mfaReminderEnabled' in data) || data.mfaReminderEnabled is bool)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidIndividualLedger(data) {
+      return data.keys().hasAll(['activityId', 'universeId', 'formatId', 'kind', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['activityId', 'universeId', 'formatId', 'kind', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.activityId)
+        && isValidId(data.universeId)
+        && isValidId(data.formatId)
+        && data.kind in ['history', 'favorite']
+        && data.status in ['presented', 'completed', 'skipped', 'saved']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'grantedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'grantedBy', 'mfaVerified', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100))
+        && data.role in ['super_admin', 'admin', 'content_manager', 'moderator']
+        && isValidId(data.grantedBy)
+        && (!('mfaVerified' in data) || data.mfaVerified is bool)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCouple(data) {
+      return data.keys().hasAll(['id', 'name', 'memberIds', 'partnerAId', 'status', 'activeMode', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'memberIds', 'partnerAId', 'partnerBId', 'status', 'activeMode', 'createdBy', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.memberIds is list && data.memberIds.size() >= 1 && data.memberIds.size() <= 2 && data.memberIds[0] is string
+        && isValidId(data.partnerAId)
+        && (!('partnerBId' in data) || data.partnerBId == null || isValidId(data.partnerBId))
+        && data.status in ['pending', 'active', 'paused', 'dissolved']
+        && data.activeMode in ['couple', 'remote_sync', 'pass_device']
+        && isValidId(data.createdBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCoupleInvite(data) {
+      return data.keys().hasAll(['code', 'coupleId', 'inviterId', 'inviterName', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['code', 'coupleId', 'inviterId', 'inviterName', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.code) && data.code.size() >= 6 && data.code.size() <= 32
+        && isValidId(data.coupleId)
+        && isValidId(data.inviterId)
+        && data.inviterName is string && data.inviterName.size() >= 1 && data.inviterName.size() <= 100
+        && data.status in ['pending', 'accepted', 'declined', 'revoked']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCoupleHistory(data) {
+      return data.keys().hasAll(['activityId', 'universeId', 'formatId', 'status', 'mode', 'presentedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['activityId', 'universeId', 'formatId', 'status', 'mode', 'presentedBy', 'createdAt', 'updatedAt'])
+        && isValidId(data.activityId)
+        && isValidId(data.universeId)
+        && isValidId(data.formatId)
+        && data.status in ['presented', 'completed', 'skipped']
+        && data.mode in ['couple', 'remote_sync', 'pass_device']
+        && isValidId(data.presentedBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCoupleFavorite(data) {
+      return data.keys().hasAll(['activityId', 'universeId', 'formatId', 'addedBy', 'replayCount', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['activityId', 'universeId', 'formatId', 'addedBy', 'replayCount', 'createdAt', 'updatedAt'])
+        && isValidId(data.activityId)
+        && isValidId(data.universeId)
+        && isValidId(data.formatId)
+        && isValidId(data.addedBy)
+        && data.replayCount is int && data.replayCount >= 0 && data.replayCount <= 10000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCoupleSession(data) {
+      return data.keys().hasAll(['id', 'mode', 'universeId', 'formatId', 'activityId', 'status', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'mode', 'universeId', 'formatId', 'activityId', 'status', 'currentTurnUid', 'partnerAReady', 'partnerBReady', 'createdBy', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.mode in ['couple', 'remote_sync', 'pass_device']
+        && isValidId(data.universeId)
+        && isValidId(data.formatId)
+        && isValidId(data.activityId)
+        && data.status in ['waiting', 'active', 'revealing', 'completed', 'aborted']
+        && (!('currentTurnUid' in data) || data.currentTurnUid == null || isValidId(data.currentTurnUid))
+        && (!('partnerAReady' in data) || data.partnerAReady is bool)
+        && (!('partnerBReady' in data) || data.partnerBReady is bool)
+        && isValidId(data.createdBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUniverse(data) {
+      return data.keys().hasAll(['id', 'slug', 'order', 'category', 'titleFr', 'titleEn', 'descriptionFr', 'descriptionEn', 'isActive', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'slug', 'order', 'category', 'titleFr', 'titleEn', 'descriptionFr', 'descriptionEn', 'isActive', 'formatsCount', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.slug)
+        && data.order is int && data.order >= 1 && data.order <= 50
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+        && data.titleFr is string && data.titleFr.size() >= 1 && data.titleFr.size() <= 160
+        && data.titleEn is string && data.titleEn.size() >= 1 && data.titleEn.size() <= 160
+        && data.descriptionFr is string && data.descriptionFr.size() >= 1 && data.descriptionFr.size() <= 1000
+        && data.descriptionEn is string && data.descriptionEn.size() >= 1 && data.descriptionEn.size() <= 1000
+        && data.isActive is bool
+        && (!('formatsCount' in data) || (data.formatsCount is int && data.formatsCount >= 0 && data.formatsCount <= 100))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidFormat(data) {
+      return data.keys().hasAll(['id', 'universeId', 'order', 'slug', 'titleFr', 'titleEn', 'descriptionFr', 'descriptionEn', 'isActive', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'universeId', 'order', 'slug', 'titleFr', 'titleEn', 'descriptionFr', 'descriptionEn', 'participationModes', 'isActive', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.universeId)
+        && data.order is int && data.order >= 1 && data.order <= 20
+        && isValidId(data.slug)
+        && data.titleFr is string && data.titleFr.size() >= 1 && data.titleFr.size() <= 160
+        && data.titleEn is string && data.titleEn.size() >= 1 && data.titleEn.size() <= 160
+        && data.descriptionFr is string && data.descriptionFr.size() >= 1 && data.descriptionFr.size() <= 1000
+        && data.descriptionEn is string && data.descriptionEn.size() >= 1 && data.descriptionEn.size() <= 1000
+        && (!('participationModes' in data) || (data.participationModes is list && data.participationModes.size() <= 4 && (data.participationModes.size() == 0 || data.participationModes[0] is string)))
+        && data.isActive is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidActivity(data) {
+      return data.keys().hasAll(['id', 'universeId', 'formatId', 'type', 'titleFr', 'titleEn', 'bodyFr', 'bodyEn', 'intimacyLevel', 'durationMinutes', 'status', 'contentHash', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'universeId', 'formatId', 'type', 'titleFr', 'titleEn', 'bodyFr', 'bodyEn', 'instructionsFr', 'instructionsEn', 'intimacyLevel', 'durationMinutes', 'participationModes', 'status', 'scheduledAt', 'contentHash', 'sourceImportId', 'createdBy', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.universeId)
+        && isValidId(data.formatId)
+        && data.type in ['question', 'challenge', 'scenario', 'educational', 'instruction']
+        && data.titleFr is string && data.titleFr.size() >= 1 && data.titleFr.size() <= 300
+        && data.titleEn is string && data.titleEn.size() >= 1 && data.titleEn.size() <= 300
+        && data.bodyFr is string && data.bodyFr.size() >= 1 && data.bodyFr.size() <= 5000
+        && data.bodyEn is string && data.bodyEn.size() >= 1 && data.bodyEn.size() <= 5000
+        && (!('instructionsFr' in data) || (data.instructionsFr is string && data.instructionsFr.size() <= 2000))
+        && (!('instructionsEn' in data) || (data.instructionsEn is string && data.instructionsEn.size() <= 2000))
+        && data.intimacyLevel is int && data.intimacyLevel >= 1 && data.intimacyLevel <= 5
+        && data.durationMinutes is int && data.durationMinutes >= 1 && data.durationMinutes <= 240
+        && (!('participationModes' in data) || (data.participationModes is list && data.participationModes.size() <= 4 && (data.participationModes.size() == 0 || data.participationModes[0] is string)))
+        && data.status in ['draft', 'scheduled', 'published', 'archived']
+        && (!('scheduledAt' in data) || data.scheduledAt == null || data.scheduledAt is timestamp)
+        && data.contentHash is string && data.contentHash.size() >= 8 && data.contentHash.size() <= 128
+        && (!('sourceImportId' in data) || data.sourceImportId == null || isValidId(data.sourceImportId))
+        && isValidId(data.createdBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDocumentImport(data) {
+      return data.keys().hasAll(['id', 'fileName', 'mimeType', 'fileSize', 'serverFileId', 'status', 'totalExtracted', 'acceptedCount', 'rejectedCount', 'duplicateCount', 'requiresOcr', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'fileName', 'mimeType', 'fileSize', 'serverFileId', 'status', 'totalExtracted', 'acceptedCount', 'rejectedCount', 'duplicateCount', 'requiresOcr', 'errors', 'createdBy', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 255
+        && data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 160
+        && data.fileSize is int && data.fileSize >= 1 && data.fileSize <= 20000000
+        && isValidId(data.serverFileId)
+        && data.status in ['extracted', 'in_review', 'partially_published', 'published', 'cancelled']
+        && data.totalExtracted is int && data.totalExtracted >= 0 && data.totalExtracted <= 5000
+        && data.acceptedCount is int && data.acceptedCount >= 0 && data.acceptedCount <= 5000
+        && data.rejectedCount is int && data.rejectedCount >= 0 && data.rejectedCount <= 5000
+        && data.duplicateCount is int && data.duplicateCount >= 0 && data.duplicateCount <= 5000
+        && data.requiresOcr is bool
+        && (!('errors' in data) || (data.errors is list && data.errors.size() <= 100 && (data.errors.size() == 0 || data.errors[0] is string)))
+        && isValidId(data.createdBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminLog(data) {
+      return data.keys().hasAll(['id', 'actorUid', 'actorRole', 'action', 'targetCollection', 'targetId', 'summary', 'createdAt'])
+        && data.keys().hasOnly(['id', 'actorUid', 'actorRole', 'action', 'targetCollection', 'targetId', 'summary', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.actorUid)
+        && data.actorRole is string && data.actorRole.size() >= 1 && data.actorRole.size() <= 40
+        && data.action is string && data.action.size() >= 1 && data.action.size() <= 120
+        && data.targetCollection is string && data.targetCollection.size() >= 1 && data.targetCollection.size() <= 80
+        && isValidId(data.targetId)
+        && data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 500
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSiteSetting(data) {
+      return data.keys().hasAll(['id', 'defaultLang', 'monetizationEnabled', 'remoteSyncEnabled', 'maintenanceMode', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'defaultLang', 'monetizationEnabled', 'remoteSyncEnabled', 'maintenanceMode', 'brandTaglineFr', 'brandTaglineEn', 'updatedAt'])
+        && isValidId(data.id)
+        && data.defaultLang in ['fr', 'en']
+        && data.monetizationEnabled is bool
+        && data.remoteSyncEnabled is bool
+        && data.maintenanceMode is bool
+        && (!('brandTaglineFr' in data) || (data.brandTaglineFr is string && data.brandTaglineFr.size() <= 200))
+        && (!('brandTaglineEn' in data) || (data.brandTaglineEn is string && data.brandTaglineEn.size() <= 200))
+        && data.updatedAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Rules
+    // -------------------------------------------------------------------------
+
+    // Connectivity probe
+    match /test/connection {
+      allow get: if true;
+    }
+
+    // Users (Workspace profile; PII isolated in /private)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && isAdmin();
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().role == 'user'
+        && (!('coupleId' in incoming()) || incoming().coupleId == null)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(userId)
+            && incoming().role == existing().role
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'preferredLang', 'coupleId', 'ageConfirmed', 'updatedAt']))
+          || (isSuperAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt']))
+        );
+      allow delete: if false;
+
+      // Owner-only private PII, boundaries & consent ledger (Admins cannot read personal confidences)
+      match /private/{docId} {
+        allow get, list: if isSignedIn() && isValidId(userId) && isOwner(userId);
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(docId)
+          && isOwner(userId)
+          && isValidUserPrivate(incoming())
+          && incoming().uid == request.auth.uid
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(docId)
+          && isOwner(userId)
+          && isValidUserPrivate(incoming())
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time;
+        allow delete: if false;
+      }
+
+      // Owner-only individual mode activity ledger & favorites
+      match /ledger/{activityId} {
+        allow get, list: if isSignedIn() && isValidId(userId) && isOwner(userId);
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(activityId)
+          && isOwner(userId)
+          && isValidIndividualLedger(incoming())
+          && incoming().activityId == activityId
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(activityId)
+          && isOwner(userId)
+          && isValidIndividualLedger(incoming())
+          && incoming().activityId == existing().activityId
+          && incoming().kind == existing().kind
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+        allow delete: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(activityId)
+          && isOwner(userId)
+          && existing().kind == 'favorite';
+      }
+    }
+
+    // Server-verified Administrative Roles Registry
+    match /admins/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdminStaff());
+      allow list: if isSignedIn() && isAdmin();
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidAdminRecord(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isSuperAdmin()
+          || (isBootstrapOwner() && userId == request.auth.uid && incoming().role == 'super_admin')
+        );
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isSuperAdmin()
+        && isValidAdminRecord(incoming())
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'displayName', 'mfaVerified', 'updatedAt']);
+      allow delete: if isVerifiedUser()
+        && isValidId(userId)
+        && isSuperAdmin()
+        && userId != request.auth.uid;
+    }
+
+    // Couples Sanctuary
+    match /couples/{coupleId} {
+      allow get: if isSignedIn() && isValidId(coupleId) && (request.auth.uid in existing().memberIds || isAdmin());
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.memberIds || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(coupleId)
+        && isValidCouple(incoming())
+        && incoming().id == coupleId
+        && incoming().partnerAId == request.auth.uid
+        && incoming().createdBy == request.auth.uid
+        && request.auth.uid in incoming().memberIds
+        && incoming().memberIds.size() == 1
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(coupleId)
+        && isValidCouple(incoming())
+        && incoming().id == existing().id
+        && incoming().partnerAId == existing().partnerAId
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Partner B accepts invite and joins couple
+          (existing().status == 'pending'
+            && existing().memberIds.size() == 1
+            && incoming().partnerBId == request.auth.uid
+            && incoming().memberIds.size() == 2
+            && request.auth.uid in incoming().memberIds
+            && existing().partnerAId in incoming().memberIds
+            && incoming().status == 'active'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['partnerBId', 'memberIds', 'status', 'updatedAt']))
+          // Action: Couple member updates mode, name, or pauses/dissolves
+          || (request.auth.uid in existing().memberIds
+            && existing().status != 'dissolved'
+            && incoming().memberIds == existing().memberIds
+            && (!('partnerBId' in incoming()) || incoming().partnerBId == existing().partnerBId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'activeMode', 'status', 'updatedAt']))
+        );
+      allow delete: if false;
+
+      // Couple Anti-Repetition History Ledger (strictly member-only, permanent)
+      match /history/{activityId} {
+        allow get, list: if isSignedIn() && isCoupleMember(coupleId);
+        allow create: if isVerifiedUser()
+          && isValidId(coupleId)
+          && isValidId(activityId)
+          && isCoupleMember(coupleId)
+          && isValidCoupleHistory(incoming())
+          && incoming().activityId == activityId
+          && incoming().presentedBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedUser()
+          && isValidId(coupleId)
+          && isValidId(activityId)
+          && isCoupleMember(coupleId)
+          && isValidCoupleHistory(incoming())
+          && incoming().activityId == existing().activityId
+          && incoming().universeId == existing().universeId
+          && incoming().formatId == existing().formatId
+          && incoming().presentedBy == existing().presentedBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      // Couple Shared Favorites (separate library from draw pool)
+      match /favorites/{activityId} {
+        allow get, list: if isSignedIn() && isCoupleMember(coupleId);
+        allow create: if isVerifiedUser()
+          && isValidId(coupleId)
+          && isValidId(activityId)
+          && isCoupleMember(coupleId)
+          && isValidCoupleFavorite(incoming())
+          && incoming().activityId == activityId
+          && incoming().addedBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedUser()
+          && isValidId(coupleId)
+          && isValidId(activityId)
+          && isCoupleMember(coupleId)
+          && isValidCoupleFavorite(incoming())
+          && incoming().activityId == existing().activityId
+          && incoming().addedBy == existing().addedBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['replayCount', 'updatedAt']);
+        allow delete: if isVerifiedUser()
+          && isValidId(coupleId)
+          && isValidId(activityId)
+          && isCoupleMember(coupleId);
+      }
+
+      // Couple Synchronized / Pass-and-Play Sessions (strictly member-only)
+      match /sessions/{sessionId} {
+        allow get, list: if isSignedIn() && isCoupleMember(coupleId);
+        allow create: if isVerifiedUser()
+          && isValidId(coupleId)
+          && isValidId(sessionId)
+          && isCoupleMember(coupleId)
+          && isValidCoupleSession(incoming())
+          && incoming().id == sessionId
+          && incoming().createdBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedUser()
+          && isValidId(coupleId)
+          && isValidId(sessionId)
+          && isCoupleMember(coupleId)
+          && existing().status != 'completed'
+          && existing().status != 'aborted'
+          && isValidCoupleSession(incoming())
+          && incoming().id == existing().id
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'currentTurnUid', 'partnerAReady', 'partnerBReady', 'updatedAt']);
+        allow delete: if false;
+      }
+    }
+
+    // Couple Invite Codes
+    match /couple_invites/{code} {
+      allow get: if isSignedIn() && isValidId(code);
+      allow list: if isSignedIn() && resource.data.inviterId == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(code)
+        && isValidCoupleInvite(incoming())
+        && incoming().code == code
+        && incoming().inviterId == request.auth.uid
+        && incoming().status == 'pending'
+        && exists(/databases/$(database)/documents/couples/$(incoming().coupleId))
+        && get(/databases/$(database)/documents/couples/$(incoming().coupleId)).data.partnerAId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(code)
+        && isValidCoupleInvite(incoming())
+        && incoming().code == existing().code
+        && incoming().coupleId == existing().coupleId
+        && incoming().inviterId == existing().inviterId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && existing().status == 'pending'
+        && (
+          (incoming().status in ['accepted', 'declined'] && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+          || (existing().inviterId == request.auth.uid && incoming().status == 'revoked' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // 12 Universes & 60 Formats (Public structural catalog; admin-managed writes)
+    match /universes/{universeId} {
+      allow get: if isValidId(universeId);
+      allow list: if true;
+      allow create, update: if isVerifiedUser()
+        && isValidId(universeId)
+        && isContentStaff()
+        && isValidUniverse(incoming())
+        && incoming().id == universeId
+        && incoming().updatedAt == request.time;
+      allow delete: if isVerifiedUser() && isValidId(universeId) && isAdmin();
+    }
+
+    match /formats/{formatId} {
+      allow get: if isValidId(formatId);
+      allow list: if true;
+      allow create, update: if isVerifiedUser()
+        && isValidId(formatId)
+        && isContentStaff()
+        && isValidFormat(incoming())
+        && incoming().id == formatId
+        && exists(/databases/$(database)/documents/universes/$(incoming().universeId))
+        && incoming().updatedAt == request.time;
+      allow delete: if isVerifiedUser() && isValidId(formatId) && isAdmin();
+    }
+
+    // Activities Catalog (Published visible to signed-in adults; drafts/scheduled only to staff)
+    match /activities/{activityId} {
+      allow get: if isValidId(activityId) && ((isSignedIn() && existing().status == 'published') || isAdminStaff());
+      allow list: if (isSignedIn() && resource.data.status == 'published') || isAdminStaff();
+      allow create: if isVerifiedUser()
+        && isValidId(activityId)
+        && isContentStaff()
+        && isValidActivity(incoming())
+        && incoming().id == activityId
+        && incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(activityId)
+        && isContentStaff()
+        && isValidActivity(incoming())
+        && incoming().id == existing().id
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isVerifiedUser() && isValidId(activityId) && isAdmin();
+    }
+
+    // Deterministic PDF/DOCX Import Jobs (Staff only)
+    match /imports/{importId} {
+      allow get, list: if isSignedIn() && isAdminStaff();
+      allow create: if isVerifiedUser()
+        && isValidId(importId)
+        && isContentStaff()
+        && isValidDocumentImport(incoming())
+        && incoming().id == importId
+        && incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(importId)
+        && isContentStaff()
+        && isValidDocumentImport(incoming())
+        && incoming().id == existing().id
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isVerifiedUser() && isValidId(importId) && isAdmin();
+    }
+
+    // Immutable Administrative Audit Logs
+    match /admin_logs/{logId} {
+      allow get, list: if isSignedIn() && isAdminStaff();
+      allow create: if isVerifiedUser()
+        && isValidId(logId)
+        && isAdminStaff()
+        && isValidAdminLog(incoming())
+        && incoming().id == logId
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // Platform Settings
+    match /site_settings/{settingId} {
+      allow get: if isValidId(settingId) && (settingId == 'public' || isAdminStaff());
+      allow list: if isSignedIn() && isAdminStaff();
+      allow create, update: if isVerifiedUser()
+        && isValidId(settingId)
+        && isAdmin()
+        && isValidSiteSetting(incoming())
+        && incoming().id == settingId
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+  }
+}
